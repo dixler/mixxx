@@ -1540,6 +1540,7 @@ add_library(
   src/track/taglib/trackmetadata_riff.cpp
   src/track/taglib/trackmetadata_xiph.cpp
   src/track/track.cpp
+  src/track/trackannotation.cpp
   src/track/trackinfo.cpp
   src/track/trackmetadata.cpp
   src/track/tracknumbers.cpp
@@ -1628,6 +1629,7 @@ add_library(
   src/waveform/renderers/waveformrendermark.cpp
   src/waveform/renderers/waveformrendermarkbase.cpp
   src/waveform/renderers/waveformrendermarkrange.cpp
+  src/waveform/renderers/waveformrenderannotation.cpp
   src/waveform/renderers/waveformsignalcolors.cpp
   src/waveform/renderers/waveformwidgetrenderer.cpp
   src/waveform/sharedglcontext.cpp
