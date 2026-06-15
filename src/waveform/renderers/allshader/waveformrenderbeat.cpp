@@ -1,11 +1,13 @@
 #include "waveform/renderers/allshader/waveformrenderbeat.h"
 
 #include <QDomNode>
+#include <array>
+#include <QVector4D>
 
 #include "moc_waveformrenderbeat.cpp"
 #include "rendergraph/geometry.h"
-#include "rendergraph/material/unicolormaterial.h"
-#include "rendergraph/vertexupdaters/vertexupdater.h"
+#include "rendergraph/material/rgbamaterial.h"
+#include "rendergraph/vertexupdaters/rgbavertexupdater.h"
 #include "skin/legacy/skincontext.h"
 #include "track/track.h"
 #include "waveform/renderers/waveformwidgetrenderer.h"
@@ -19,7 +21,7 @@ WaveformRenderBeat::WaveformRenderBeat(WaveformWidgetRenderer* waveformWidget,
         ::WaveformRendererAbstract::PositionSource type)
         : ::WaveformRendererAbstract(waveformWidget),
           m_isSlipRenderer(type == ::WaveformRendererAbstract::Slip) {
-    initForRectangles<UniColorMaterial>(0);
+    initForRectangles<RGBAMaterial>(0);
     setUsePreprocess(true);
 }
 
@@ -56,18 +58,22 @@ bool WaveformRenderBeat::preprocessInner() {
         return false;
     }
 
-#ifndef __SCENEGRAPH__
-    int alpha = m_waveformRenderer->getBeatGridAlpha();
-    if (alpha == 0) {
+    const int beatGridAlpha = m_waveformRenderer->getBeatGridAlpha();
+    if (beatGridAlpha == 0) {
         return false;
     }
-    m_color.setAlphaF(alpha / 100.0f);
-#endif
 
-    if (!m_color.alpha()) {
-        // Don't render the beatgrid lines is there are fully transparent
+    const float alpha = m_color.alphaF() * (beatGridAlpha / 100.0f);
+    if (alpha <= 0.0f) {
+        // Don't render the beatgrid lines if they are fully transparent
         return true;
     }
+
+    const std::array<QVector4D, 4> beatColors = {
+            QVector4D{1.0f, 0.0f, 0.0f, alpha},
+            QVector4D{1.0f, 1.0f, 0.0f, alpha},
+            QVector4D{0.0f, 1.0f, 0.0f, alpha},
+            QVector4D{0.0f, 0.0f, 1.0f, alpha}};
 
     const float devicePixelRatio = m_waveformRenderer->getDevicePixelRatio();
 
@@ -108,7 +114,10 @@ bool WaveformRenderBeat::preprocessInner() {
     const int reserved = numBeatsInRange * numVerticesPerLine;
     geometry().allocate(reserved);
 
-    VertexUpdater vertexUpdater{geometry().vertexDataAs<Geometry::Point2D>()};
+    RGBAVertexUpdater vertexUpdater{
+            geometry().vertexDataAs<Geometry::RGBAColoredPoint2D>()};
+
+    const auto begin = trackBeats->cbegin();
 
     for (auto it = trackBeats->iteratorFrom(startPosition);
             it != trackBeats->cend() && *it <= endPosition;
@@ -123,15 +132,16 @@ bool WaveformRenderBeat::preprocessInner() {
         const float x1 = static_cast<float>(xBeatPoint);
         const float x2 = x1 + 1.f;
 
+        const QVector4D color =
+                beatColors[static_cast<int>(it - begin) & 0x3];
+
         vertexUpdater.addRectangle({x1, 0.f},
-                {x2, m_isSlipRenderer ? rendererBreadth / 2 : rendererBreadth});
+                {x2, m_isSlipRenderer ? rendererBreadth / 2 : rendererBreadth},
+                color);
     }
     markDirtyGeometry();
 
     DEBUG_ASSERT(reserved == vertexUpdater.index());
-
-    material().setUniform(1, m_color);
-    markDirtyMaterial();
 
     return true;
 }

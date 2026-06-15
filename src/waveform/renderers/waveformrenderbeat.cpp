@@ -1,6 +1,8 @@
 #include "waveform/renderers/waveformrenderbeat.h"
 
 #include <QPainter>
+#include <QVector>
+#include <array>
 
 #include "track/track.h"
 #include "util/painterscope.h"
@@ -11,7 +13,6 @@ class QPaintEvent;
 
 WaveformRenderBeat::WaveformRenderBeat(WaveformWidgetRenderer* waveformWidgetRenderer)
         : WaveformRendererAbstract(waveformWidgetRenderer) {
-    m_beats.resize(128);
 }
 
 WaveformRenderBeat::~WaveformRenderBeat() {
@@ -34,7 +35,7 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
         return;
     }
 
-    int alpha = m_waveformRenderer->getBeatGridAlpha();
+    const int alpha = m_waveformRenderer->getBeatGridAlpha();
     if (alpha == 0) {
         return;
     }
@@ -42,10 +43,17 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
     // Using alpha transparency with drawLines causes a graphical issue when
     // drawing with QPainter on the QOpenGLWindow: instead of individual lines
     // a large rectangle encompassing all beatlines is drawn.
-    m_beatColor.setAlphaF(1.f);
+    const float beatAlpha = 1.f;
 #else
-    m_beatColor.setAlphaF(alpha/100.0);
+    const float beatAlpha = m_beatColor.alphaF() * (alpha / 100.0f);
 #endif
+
+    if (beatAlpha <= 0.0f) {
+        return;
+    }
+
+    const std::array<QColor, 4> beatColors = {Qt::red, Qt::yellow, Qt::green, Qt::blue};
+    std::array<QVector<QLineF>, 4> coloredBeats;
 
     const double trackSamples = m_waveformRenderer->getTrackSamples();
     if (trackSamples <= 0) {
@@ -78,15 +86,9 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
 
     painter->setRenderHint(QPainter::Antialiasing);
 
-    QPen beatPen(m_beatColor);
-    beatPen.setWidthF(std::max(1.0, scaleFactor()));
-    painter->setPen(beatPen);
-
     const Qt::Orientation orientation = m_waveformRenderer->getOrientation();
     const float rendererWidth = m_waveformRenderer->getWidth();
     const float rendererHeight = m_waveformRenderer->getHeight();
-
-    int beatCount = 0;
 
     for (; it != trackBeats->cend() && *it <= endPosition; ++it) {
         double beatPosition = it->toEngineSamplePos();
@@ -95,18 +97,25 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
 
         xBeatPoint = qRound(xBeatPoint * devicePixelRatio) / devicePixelRatio;
 
-        // If we don't have enough space, double the size.
-        if (beatCount >= m_beats.size()) {
-            m_beats.resize(m_beats.size() * 2);
-        }
+        const int colorIndex = static_cast<int>(it - trackBeats->cbegin()) & 0x3;
+        auto& beatLines = coloredBeats[colorIndex];
 
-        if (orientation == Qt::Horizontal) {
-            m_beats[beatCount++].setLine(xBeatPoint, 0.0f, xBeatPoint, rendererHeight);
-        } else {
-            m_beats[beatCount++].setLine(0.0f, xBeatPoint, rendererWidth, xBeatPoint);
-        }
+        auto line = orientation == Qt::Horizontal
+                ? QLineF{xBeatPoint, 0.0f, xBeatPoint, rendererHeight}
+                : QLineF{0.0f, xBeatPoint, rendererWidth, xBeatPoint};
+        beatLines.append(line);
     }
 
-    // Make sure to use constData to prevent detaches!
-    painter->drawLines(m_beats.constData(), beatCount);
+    QPen beatPen;
+    beatPen.setWidthF(std::max(1.0, scaleFactor()));
+    for (int i = 0; i < coloredBeats.size(); ++i) {
+        if (coloredBeats[i].isEmpty()) {
+            continue;
+        }
+        QColor color = beatColors[i];
+        color.setAlphaF(beatAlpha);
+        beatPen.setColor(color);
+        painter->setPen(beatPen);
+        painter->drawLines(coloredBeats[i].constData(), coloredBeats[i].size());
+    }
 }
