@@ -15,6 +15,7 @@
 #include "track/steminfo.h"
 #include "track/steminfoimporter.h"
 #endif
+#include "track/trackannotation.h"
 #include "track/track_decl.h"
 #include "track/trackrecord.h"
 #include "util/color/predefinedcolorpalettes.h"
@@ -347,6 +348,13 @@ class Track : public QObject {
     void swapHotcues(int a, int b);
     void setCuePoints(const QList<CuePointer>& cuePoints);
 
+    // Track annotation support
+    mixxx::TrackAnnotationList getAnnotations() const {
+        const QMutexLocker lock(&m_qMutex);
+        return m_annotations;
+    }
+    void loadAnnotations();
+
 #ifdef __STEM__
     QList<StemInfo> getStemInfo() const {
         const QMutexLocker lock(&m_qMutex);
@@ -495,6 +503,7 @@ class Track : public QObject {
     void colorUpdated(const mixxx::RgbColor::optional_t& color);
     void ratingUpdated(int rating);
     void cuesUpdated();
+    void annotationsUpdated();
 #ifdef __STEM__
     void stemsUpdated();
 #endif
@@ -616,6 +625,9 @@ class Track : public QObject {
 
     // The list of cue points for the track
     QList<CuePointer> m_cuePoints;
+
+    // The list of track annotations (time ranges with labels and colors)
+    mixxx::TrackAnnotationList m_annotations;
 
 #ifdef __STEM__
     // The list of stem info

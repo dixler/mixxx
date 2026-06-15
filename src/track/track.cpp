@@ -1,6 +1,7 @@
 #include "track/track.h"
 
 #include <QDebug>
+#include <QFile>
 #include <atomic>
 #include <cmath>
 
@@ -8,6 +9,7 @@
 #include "moc_track.cpp"
 #include "sources/metadatasource.h"
 #include "track/keyfactory.h"
+#include "track/trackannotation.h"
 #include "util/assert.h"
 #include "util/logger.h"
 #include "util/time.h"
@@ -1982,6 +1984,10 @@ void Track::updateStreamInfoFromSource(
         emit stemsUpdated();
     }
 #endif
+
+    // Load track annotations after stream info is available
+    // This is done outside the lock to avoid blocking
+    loadAnnotations();
 }
 
 QString Track::getGenre() const {
@@ -2035,3 +2041,40 @@ bool Track::updateMood(
     return true;
 }
 #endif // __EXTRA_METADATA__
+
+void Track::loadAnnotations() {
+    // Try to load annotations from a JSON file next to the track file
+    // e.g., if track is "song.mp3", look for "song.annotations.json"
+    QString location = getLocation();
+    if (location.isEmpty()) {
+        return;
+    }
+
+    // Build annotation file path by inserting ".annotations" before the extension
+    int lastDot = location.lastIndexOf('.');
+    QString annotationPath;
+    if (lastDot > 0) {
+        annotationPath = location.left(lastDot) + ".annotations.json";
+    } else {
+        annotationPath = location + ".annotations.json";
+    }
+
+    QFile annotationFile(annotationPath);
+    if (!annotationFile.exists()) {
+        // No annotation file found, which is fine
+        return;
+    }
+
+    kLogger.info() << "Loading annotations from:" << annotationPath;
+
+    mixxx::TrackAnnotationList annotations = mixxx::TrackAnnotationList::fromJsonFile(annotationPath);
+
+    const QMutexLocker lock(&m_qMutex);
+    m_annotations = annotations;
+
+    if (!m_annotations.isEmpty()) {
+        kLogger.info() << "Loaded" << m_annotations.count() << "annotations for track:" << location;
+        emit annotationsUpdated();
+    }
+}
+
